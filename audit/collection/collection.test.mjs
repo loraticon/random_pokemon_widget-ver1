@@ -73,6 +73,46 @@ test('설정 페이지와 색이 다른 기존 기록은 도감·한도에서 �
   const shiny = page('pikachu'); shiny.properties['색이 다름'] = { checkbox: true }; f.pages.push(shiny);
   const snapshot = await f.fresh().getSnapshot(); assert.equal(snapshot.used, 0); assert.equal(snapshot.records.length, 0); assert.equal(f.pages.length, 2);
 });
+
+test('빈 행과 공백만 있는 행은 보존하면서 도감·한도에서 제외, 연결·포획·설정 저장 가능', async () => {
+  const f = fixture(1);
+  const blank = page('');
+  for (const name of ['이름', '폼 식별자', '배경 식별자']) blank.properties[name][name === '이름' ? 'title' : 'rich_text'] = [];
+  const whitespace = page(' \t\n', undefined, '　 ');
+  f.pages.push(blank, whitespace);
+  const originals = structuredClone(f.pages);
+  await f.prepare();
+  const before = await f.fresh().getSnapshot();
+  assert.deepEqual(before.records, []); assert.deepEqual(before.owned, []);
+  assert.equal(before.used, 0); assert.equal(before.remaining, 1);
+  const captured = await f.fresh().capture(request());
+  assert.equal(captured.used, 1); assert.equal(captured.remaining, 0);
+  assert.deepEqual(captured.owned, ['pikachu:false']); assert.equal(captured.records.length, 1);
+  await f.fresh().savePreferences({ favoriteChange: { pokemonKey: 'pikachu:false', favorite: true } });
+  await f.fresh().savePreferences({ mode: 'sleep', pokemonKey: 'pikachu:false', backgroundId: 'electric', favoriteBackgrounds: ['electric'] });
+  const after = await f.fresh().getSnapshot();
+  assert.deepEqual(after.preferences.favoritePokemon, ['pikachu:false']); assert.equal(after.preferences.mode, 'sleep');
+  await assert.rejects(f.fresh().capture(request()), { code: 'ALREADY_COLLECTED' });
+  await assert.rejects(f.fresh().capture(request('eevee')), { code: 'DAILY_LIMIT' });
+  assert.deepEqual(f.pages.slice(0, 2), originals);
+  assert.equal(f.calls.some(call => call.body?.archived || call.body?.in_trash || call.method === 'DELETE'), false);
+});
+
+test('내용이 있는 행의 누락·잘못된 폼 식별자와 배경 식별자는 계속 오류로 표시', async () => {
+  for (const makeRow of [
+    () => { const row = page(''); row.properties['이름'].title = text('피카츄'); return row; },
+    () => page('', undefined, 'electric'),
+    () => { const row = page(''); row.properties['즐겨찾기'].checkbox = true; return row; },
+    () => page('unknown-form'),
+    () => page('pikachu', undefined, 'unknown-background')
+  ]) {
+    const f = fixture(); await f.prepare();
+    f.pages.push(makeRow());
+    await assert.rejects(f.fresh().getSnapshot(), /폼 식별자|배경 식별자/);
+    await assert.rejects(f.fresh().capture(request('eevee')), /폼 식별자|배경 식별자/);
+    assert.equal(f.pages.length, 2);
+  }
+});
 test('포획은 네 속성만 저장, 클라이언트 배경을 무시하고 폼별 배경과 이미지를 계산', async () => {
   const f = fixture(); await f.prepare();
   const result = await f.fresh().capture({ ...request('arcanine-hisuian'), backgroundId: 'water', name: '임의 이름' });

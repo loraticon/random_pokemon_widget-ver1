@@ -39,6 +39,16 @@ test('단일 Worker 모듈은 외부 import와 저장소 바인딩 없이 로드
   assert.equal(module.backgroundFor({ slug: 'arcanine-hisui', dexId: 59 }).id, 'fire');
   const response = await module.default.fetch(new Request('https://example.workers.dev/api/setup', { method: 'POST', body: '{}' }), {});
   assert.equal(response.status, 503); assert.match((await response.json()).error, /NOTION_TOKEN/);
+  const collection = new module.NotionCollection({ NOTION_TOKEN: 'test-only' }, '0123456789abcdef0123456789abcdef');
+  const rows = [
+    { id: 'blank', properties: { '이름': { title: [] }, '폼 식별자': { rich_text: [] }, '배경 식별자': { rich_text: [] }, '즐겨찾기': { checkbox: false } } },
+    { id: 'collected', created_time: new Date().toISOString(), properties: { '이름': { title: [{ text: { content: '피카츄' } }] }, '폼 식별자': { rich_text: [{ text: { content: 'pikachu' } }] } } }
+  ];
+  collection.query = async () => structuredClone(rows);
+  const records = await collection.readRecords();
+  assert.equal(records.length, 1); assert.equal(records[0].slug, 'pikachu');
+  rows[0].properties['즐겨찾기'].checkbox = true;
+  await assert.rejects(collection.readRecords(), /폼 식별자/);
 });
 test('공용 Pages ZIP은 새 연결 화면·Worker 다운로드 포함, Secret·개인 연결 정보는 제외', () => {
   const files = unzip(read('cloudflare-Pages-공용화면.zip'));

@@ -194,7 +194,11 @@ export class NotionCollection {
     return { ...record, backgroundId: background?.id || '', backgroundName: background?.title || '', backgroundSrc: background ? new URL(background.path.slice(2), this.origin).href : '' };
   }
   async readRecords() {
-    return (await this.query()).filter(page => plain(page.properties['폼 식별자']) !== SETTINGS_SLUG && !page.properties['색이 다름']?.checkbox).map(page => this.toRecord(page)).sort((a, b) => a.dexId - b.dexId);
+    return (await this.query()).filter(page => {
+      const p = page.properties;
+      const blank = ['이름', '폼 식별자', '배경 식별자'].every(name => !plain(p[name]).trim()) && !p['즐겨찾기']?.checkbox;
+      return !blank && plain(p['폼 식별자']) !== SETTINGS_SLUG && !p['색이 다름']?.checkbox;
+    }).map(page => this.toRecord(page)).sort((a, b) => a.dexId - b.dexId);
   }
   preferences(records, stored) {
     const pokemon = new Set(records.map(captureKey)); const backgrounds = new Set(records.map(record => record.backgroundId).filter(Boolean));
